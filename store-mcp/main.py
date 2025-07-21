@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP
+from fastmcp.server import FastMCP
 import httpx
 import json
 import uvicorn
@@ -143,7 +143,7 @@ def main():
             Mount("/", app=mcp.sse_app()),
         ]
     )
-
+    print(st.ping_handler())
     uvicorn.run(app, host="127.0.0.1", port=5028)
 
 if __name__ == "__main__":
