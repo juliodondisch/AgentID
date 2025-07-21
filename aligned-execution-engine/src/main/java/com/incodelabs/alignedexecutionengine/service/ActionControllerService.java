@@ -64,10 +64,11 @@ public class ActionControllerService {
                 
                 DecisionOut promptDecision = promptValidation.get();
                 feedback.setInputPromptFeedback(promptDecision);
+                String details = "Triggered policy: " + promptDecision.getPolicyId() + "\n Reason: " + promptDecision.getReason();
                 
                 if (PerPolicy.AlignmentType.deny.equals(promptDecision.getAlignment())) {
                     feedback.setCompleted(true);
-                    querySessionService.updateSessionPolicy(sessionID, "deny", "");
+                    querySessionService.updateSessionPolicy(sessionID, "deny", details);
                     return feedback;
                 }
                 
@@ -75,7 +76,7 @@ public class ActionControllerService {
                 processedPrompt = prompt;
                 Boolean idvTriggered = false;
                 if (PerPolicy.AlignmentType.idv.equals(promptDecision.getAlignment())) {
-                    querySessionService.updateSessionPolicy(sessionID, "idv", "");
+                    querySessionService.updateSessionPolicy(sessionID, "idv", details);
                     idvTriggered = true;
                     feedback.getExecutionSteps().add(ActionPlan.builder().tool("idv").build());
                     
@@ -98,7 +99,7 @@ public class ActionControllerService {
                 }
 
                 if (!idvTriggered) {
-                    querySessionService.updateSessionPolicy(sessionID, "allow", "");
+                    querySessionService.updateSessionPolicy(sessionID, "allow", "All policies allowed");
                 }
 
                 // Step 2: Start feedback loop if prompt is allowed.
@@ -122,7 +123,6 @@ public class ActionControllerService {
             return feedback;
         }
     }
-
     // Julio -Default no resume constructor
     public ActionFeedbackResponse testControllerAgent(String prompt, String sessionID){
         return testControllerAgent(prompt, sessionID, false);
@@ -167,7 +167,7 @@ public class ActionControllerService {
             // Validate action plan with policy
             // Julio
             String policyCheckId = policyCheckService.createPolicyCheck(actionID);
-
+            
             CheckOutputRequest policyRequest = CheckOutputRequest.builder()
                     .llmOutput(actionPlan.getLlmOutput())
                     .actions(actionPlan.getActions() != null ? actionPlan.getActions() : Collections.emptyList())
@@ -176,6 +176,7 @@ public class ActionControllerService {
             feedback.setCheckOutputRequest(policyRequest);
             
             Optional<DecisionOut> policyDecision = policyApi.checkOutput(policyRequest);
+            
             if (policyDecision.isEmpty()) {
                 feedback.setErrorMessage("Policy validation failed");
                 // Julio
@@ -183,14 +184,15 @@ public class ActionControllerService {
                 return feedback;
             }
 
-            //DecisionOut outputDecision = policyDecision.get();
-            DecisionOut outputDecision = DecisionOut.builder().alignment(PerPolicy.AlignmentType.hil).build();
+            DecisionOut outputDecision = policyDecision.get();
+            String details = "Triggered policy: " + outputDecision.getPolicyId() + "\n Reason: " + outputDecision.getReason();
+            // DecisionOut outputDecision = DecisionOut.builder().alignment(PerPolicy.AlignmentType.hil).build();
             feedback.setOutputFeedback(outputDecision);
             
             if (PerPolicy.AlignmentType.deny.equals(outputDecision.getAlignment())) {
                 feedback.setCompleted(true);
                 // Julio
-                policyCheckService.completePolicyCheck(policyCheckId, "completed", "deny", "");
+                policyCheckService.completePolicyCheck(policyCheckId, "completed", "deny", details);
                 return feedback;
             }
 
@@ -202,7 +204,7 @@ public class ActionControllerService {
                 tokenValidation.setSuccess(false);
 
                 //Julio
-                policyCheckService.completePolicyCheck(policyCheckId, "completed", "idv", "");
+                policyCheckService.completePolicyCheck(policyCheckId, "completed", "idv", details);
                 String toolRequestId = toolRequestService.createToolRequest(actionID, "idv", null);
                 toolRequestService.initiateToolExecution(toolRequestId, "idv");
 
@@ -228,17 +230,17 @@ public class ActionControllerService {
 
             if (PerPolicy.AlignmentType.hil.equals(outputDecision.getAlignment())) {
                 // Generate HIL feedback response
-                policyCheckService.completePolicyCheck(policyCheckId, "completed", "hil", "");
+                policyCheckService.completePolicyCheck(policyCheckId, "completed", "hil", details);
                 
                 // Create HIL feedback response using the previous action plan
-                CheckOutputIn hilResponse = generateHilFeedbackResponse(prompt, actionPlan, feedback);
+                CheckOutputIn hilRequestText = generateHilFeedbackResponse(prompt, actionPlan, feedback);
                  
                 // Set the HIL response in feedback and mark as completed
-                feedback.setActionPlan(hilResponse); // Use actionPlan field instead of hilFeedbackResponse
+                feedback.setActionPlan(hilRequestText); // Use actionPlan field instead of hilFeedbackResponse
                 feedback.setCompleted(true);
 
                 // Create and initiate hil tool request
-                toolRequestService.createToolRequest(actionID, "hil_feedback", "HIL feedback requested");
+                toolRequestService.createToolRequest(actionID, "hil_feedback", hilRequestText.getLlmOutput());
                 toolRequestService.initiateToolExecution(actionID, "hil_feedback");
                  
                 querySessionService.pauseQuerySession(sessionID);
@@ -248,7 +250,7 @@ public class ActionControllerService {
 
             if (PerPolicy.AlignmentType.allow.equals(outputDecision.getAlignment())) {
                 // Execute tools if available
-                policyCheckService.completePolicyCheck(policyCheckId, "completed", "allow", "");
+                policyCheckService.completePolicyCheck(policyCheckId, "completed", "allow", "All policies allowed");
                 if (!CollectionUtils.isEmpty(actionPlan.getActions())) {
                     for (ActionPlan action : actionPlan.getActions()) {
                         //Julio

@@ -90,9 +90,19 @@ function App() {
         fetch(`http://localhost:5920/feedback/actionplan/${actionPlan.action_id}`).then(res => res.json()),
         fetch(`http://localhost:5920/toolrequest/actionplan/${actionPlan.action_id}`).then(res => res.json()),
       ]);
+
+      console.log(actionreq);
+      console.log(policyCheckreq);
+      console.log(feedbackreq);
+      console.log(toolRequestsreq);
+
       setSelectedActionPlanDetails(actionreq);
-      // Temp getting rid of the Feedback field in feedbackreq and replacing it with null bc we currently don't have natural language feedback
-      feedbackreq[0].feedback = null;
+
+      // check if not null
+      if (feedbackreq.length !== 0) {
+        // Temp getting rid of the Feedback field in feedbackreq and replacing it with null bc we currently don't have natural language feedback
+        feedbackreq.feedback = "N/A";
+      }
 
       setAction(Object.values(actionreq));
       setPolicyCheck(Object.values(policyCheckreq)[0]);

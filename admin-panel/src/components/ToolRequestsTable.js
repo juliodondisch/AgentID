@@ -48,17 +48,17 @@ const ToolRequestsTable = ({ toolRequests }) => {
         <div>
           <h4 className="text-sm font-medium text-gray-700 mb-2">Request Parameters</h4>
           <div className="bg-gray-50 rounded-lg p-3">
-            <pre className="text-xs text-gray-600 whitespace-pre-wrap">
+            <div className="text-xs text-gray-600 font-mono whitespace-pre-wrap break-words break-all">
               {JSON.stringify(toolRequest.request_parameters, null, 2)}
-            </pre>
+            </div>
           </div>
         </div>
         <div>
           <h4 className="text-sm font-medium text-gray-700 mb-2">Response Data</h4>
           <div className="bg-gray-50 rounded-lg p-3">
-            <pre className="text-xs text-gray-600 whitespace-pre-wrap">
+            <div className="text-xs text-gray-600 font-mono whitespace-pre-wrap break-words break-all">
               {JSON.stringify(toolRequest.response_data, null, 2)}
-            </pre>
+            </div>
           </div>
         </div>
       </div>

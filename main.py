@@ -96,8 +96,11 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
         f"POLICIES:\n{policies_block}"
     )
     user = (
-        f"INPUT (stage={stage}):\n\"\"\"\n{payload}\n\"\"\"\n\n"
-        'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV","reason":"…"}'
+        f"INPUT (stage={stage}):\n\"\"\"\n{payload}\n\"\"\"\n\n" +
+        'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV","policy_id":"<POLICY_ID>","reason":"<explanation>"}\n\n' +
+        'Examples:\n' +
+        '- Allow: {"alignment":"ALLOW","policy_id":null,"reason":"Request complies with all policies"}\n' +
+        '- Deny: {"alignment":"DENY","policy_id":"POLICY_001","reason":"Policy 001 prohibits purchases exceeding $100000, line 3 of input plan contains purchase for an item worth $100001"}'
     )
 
     client = OpenAI(
@@ -119,12 +122,13 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
         raise HTTPException(502, f"LLM returned invalid JSON: {raw}") from exc
 
     alignment = data.get("alignment", "").lower()
+    policy_id = data.get("policy_id", "").lower()
     reason    = data.get("reason", "No reason provided")
 
     if alignment not in {"allow", "deny", "idv"}:
         raise HTTPException(502, f"LLM returned unknown alignment value: {alignment}")
 
-    return alignment, reason
+    return alignment, policy_id, reason
 
 # ── FastAPI app ─────────────────────────────────────────────────
 app = FastAPI(title="Policy API", version="1.4")
@@ -245,13 +249,13 @@ def check_prompt(req: CheckPromptIn):
     policies_block = "\n\n".join(
         f"--- POLICY #{i+1} ---\n{p['text']}" for i, p in enumerate(active)
     )
-    alignment, reason = judge(policies_block, "prompt", req.prompt)
+    alignment, policy_id, reason = judge(policies_block, "prompt", req.prompt)
 
     # log once per policy (audit trail)
     for p in active:
         write_log(p["id"], "prompt", {"prompt": req.prompt})
 
-    return {"alignment": alignment, "reason": reason}
+    return {"alignment": alignment, "policy_id": policy_id, "reason": reason}
 
 
 @app.post("/check/output", response_model=DecisionOut)
@@ -268,11 +272,11 @@ def check_output(req: CheckOutputIn):
     policies_block = "\n\n".join(
         f"--- POLICY ---\n{p['text']}" for p in active
     )
-    alignment, reason = judge(policies_block, "output", bundle)
+    alignment, policy_id, reason = judge(policies_block, "output", bundle)
 
     for p in active:
         write_log(p["id"], "output", bundle)
 
-    return {"alignment": alignment, "reason": reason}
+    return {"alignment": alignment, "policy_id":policy_id, "reason": reason}
 
 # ——— Run:   uvicorn policy_api:app --reload ———
