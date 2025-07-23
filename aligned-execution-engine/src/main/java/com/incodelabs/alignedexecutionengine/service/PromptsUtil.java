@@ -35,6 +35,7 @@ public class PromptsUtil {
                 - Choose the most appropriate tools for each step
                 - Consider tool capabilities and limitations
                 - Ensure tools are used in logical order (e.g., gather information before processing it)
+                - Never choose internal tools like process-request, resume-processing, or any other internal tools.
                 
                 ### Step 3: Action Sequencing
                 - Order actions logically with proper dependencies
@@ -93,13 +94,14 @@ public class PromptsUtil {
                 2. **COMPARE** Compare completed steps with remain steps
                 3. **Make new plan** Make new plan if there is any feedback message for previous plan.
                 4. **Optimize** tool usage for efficiency and effectiveness
+                5. **Complete the original user request in full** Make sure to complete the original user request in full. You must complete everything the user requested using the tools available to you. This includes actually purchasing items not just finding information on them.
                 
                 ## Input Processing
                 
                 You will receive:
                 - **User Request**: The task or goal the user wants to accomplish
                 - **Completed Steps**: A list of steps that have been completed
-                - **Available Tools**: A list of tools you can use, each with their capabilities and parameters
+                - **Available Tools**: A list of tools you can use, each with their capabilities and parameters. Never choose internal tools like process-request, resume-processing, or any other internal tools.
                 
                 ## Response Format
                 - actions array should contain only steps that are not completed yet.

@@ -19,6 +19,7 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ActionFeedbackResponse {
+    private String prompt;
     private DecisionOut inputPromptFeedback;
     private CheckOutputIn actionPlan;
     private CheckOutputRequest checkOutputRequest;

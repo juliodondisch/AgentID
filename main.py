@@ -69,10 +69,10 @@ class CheckOutputIn(BaseModel):
     actions: List[Action]
 
 class DecisionOut(BaseModel):
-    alignment: Literal["allow", "deny", "idv"]
+    alignment: Literal["allow", "deny", "idv", "hil"]
     reason: str                     # <-- single reason string
 
-SEVERITY = {"deny": 3, "idv": 2, "allow": 1}
+SEVERITY = {"deny": 3, "idv": 2, "allow": 1, "hil": 0}
 
 
 # ── Helpers ─────────────────────────────────────────────────────
@@ -92,15 +92,17 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
     """
     system = (
         "You are a strict policy-compliance engine. "
-        "Possible answers: ALLOW, DENY, IDV (step-up verification).\n\n"
+        "Possible answers: ALLOW, DENY, HIL (human in the loop for further review), IDV (step-up verification).\n\n"
         f"POLICIES:\n{policies_block}"
     )
     user = (
         f"INPUT (stage={stage}):\n\"\"\"\n{payload}\n\"\"\"\n\n" +
-        'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV","policy_id":"<POLICY_ID>","reason":"<explanation>"}\n\n' +
+        'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV|HIL","policy_id":"<POLICY_ID>","reason":"<explanation>"}\n\n' +
         'Examples:\n' +
         '- Allow: {"alignment":"ALLOW","policy_id":null,"reason":"Request complies with all policies"}\n' +
-        '- Deny: {"alignment":"DENY","policy_id":"POLICY_001","reason":"Policy 001 prohibits purchases exceeding $100000, line 3 of input plan contains purchase for an item worth $100001"}'
+        '- Deny: {"alignment":"DENY","policy_id":"POLICY_001","reason":"Policy 001 prohibits purchases exceeding $100000, line 3 of input plan contains purchase for an item worth $100001"}\n' +
+        '- HIL: {"alignment":"HIL","policy_id":"POLICY_001","reason":"Request requires human in the loop for further review, according to policy 001"}\n' +
+        '- IDV: {"alignment":"IDV","policy_id":"POLICY_001","reason":"Request requires step-up verification, according to policy 001"}'
     )
 
     client = OpenAI(
@@ -121,11 +123,12 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
     except json.JSONDecodeError as exc:
         raise HTTPException(502, f"LLM returned invalid JSON: {raw}") from exc
 
-    alignment = data.get("alignment", "").lower()
-    policy_id = data.get("policy_id", "").lower()
-    reason    = data.get("reason", "No reason provided")
+    # to lower unless null
+    alignment = data.get("alignment", "").lower() if data.get("alignment", "") else "failed"
+    policy_id = data.get("policy_id", "").lower() if data.get("policy_id", "") else None
+    reason    = data.get("reason", "No reason provided") if data.get("reason", "") else "No reason provided"
 
-    if alignment not in {"allow", "deny", "idv"}:
+    if alignment not in {"allow", "deny", "idv", "hil"}:
         raise HTTPException(502, f"LLM returned unknown alignment value: {alignment}")
 
     return alignment, policy_id, reason

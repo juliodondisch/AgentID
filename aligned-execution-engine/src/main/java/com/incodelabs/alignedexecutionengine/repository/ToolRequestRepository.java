@@ -46,7 +46,8 @@ public class ToolRequestRepository {
     // Initiate tool execution
     public String initiateToolExecution(String actionId, String toolName) {
         String toolRequestId = jdbcTemplate.queryForObject(
-            "SELECT tool_request_id FROM tool_requests WHERE action_id = ? AND tool_name = ?",
+            // select the first pending tool request for the action and tool
+            "SELECT tool_request_id FROM tool_requests WHERE action_id = ? AND tool_name = ? AND tool_status = 'PENDING' LIMIT 1",
             String.class,
             actionId, toolName
         );

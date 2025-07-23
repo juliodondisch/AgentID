@@ -45,6 +45,7 @@ public class ActionControllerService {
     public ActionFeedbackResponse testControllerAgent(String prompt, String sessionID, Boolean resume) {
         String processedPrompt = prompt;
         ActionFeedbackResponse feedback = ActionFeedbackResponse.builder().build();
+        feedback.setPrompt(prompt);
         // Julio
         if (!resume) {
         querySessionService.startQuerySession(prompt, sessionID);
@@ -338,7 +339,8 @@ public class ActionControllerService {
                 .collect(Collectors.joining(", "));
         String previousPlannedActions = feedback.getActionPlan().getActions().stream().map(ActionPlan::getTool).collect(Collectors.joining(", "));
         String previousActionPlanInDetail = feedback.getActionPlan().getLlmOutput();
-        String userPrompt = "Previous plan: {" + previousActionPlanInDetail + "}. Planned actions: {" + previousPlannedActions + "}. Result of executed actions: {" + result + "}. Should there be any new actions planned based on this result? If yes, please provide a new plan.";
+        String userPrompt = "Initial user request, must be completed in full before processing ends: {" + feedback.getPrompt() + "}. Previous plan: {" + previousActionPlanInDetail + "}. Planned actions: {" + previousPlannedActions + "}. Result of executed actions: {" + result + "}. Should there be any new actions planned based on this result? If yes, please provide a new plan.";
+        log.info("Feedback prompt: {}", userPrompt);
         CheckOutputIn newPlan = openAiChatClient.prompt()
                 .system(promptsUtil.newPlanPrompt())
                 .user(userPrompt)
