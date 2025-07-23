@@ -207,7 +207,7 @@ public class ActionControllerService {
                 //Julio
                 policyCheckService.completePolicyCheck(policyCheckId, "completed", "idv", details);
                 String toolRequestId = toolRequestService.createToolRequest(actionID, "idv", null);
-                toolRequestService.initiateToolExecution(toolRequestId, "idv");
+                toolRequestService.initiateToolExecution(actionID, "idv");
 
                 if (currentVerificationToken != null) {
                     tokenValidation = verificationService.validateToken(currentVerificationToken);
@@ -215,6 +215,9 @@ public class ActionControllerService {
                 if (!tokenValidation.isValid()) {
                     currentVerificationToken =  completeIdvProcess(feedback);
                 }
+
+                // Julio - Remove this, just for testing
+                currentVerificationToken = "Temporary token";
 
                 if (currentVerificationToken == null || currentVerificationToken.isEmpty()) {
                     feedback.setErrorMessage("IDV process failed, no token available");
