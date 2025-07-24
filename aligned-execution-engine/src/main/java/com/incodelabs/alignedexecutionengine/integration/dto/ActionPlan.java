@@ -14,6 +14,7 @@ import java.util.Map;
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ActionPlan {
+    private String toolRequestId;
     private String tool;
     private Map<String, Object> parameters;
 }

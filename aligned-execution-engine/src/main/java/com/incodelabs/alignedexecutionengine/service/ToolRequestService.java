@@ -34,8 +34,8 @@ public class ToolRequestService {
     }
 
     // Initiate tool execution
-    public String initiateToolExecution(String actionId, String toolName) {
-        return toolRequestRepository.initiateToolExecution(actionId, toolName);
+    public String initiateToolExecution(String toolRequestId) {
+        return toolRequestRepository.initiateToolExecution(toolRequestId);
     }
 
     // Complete tool execution

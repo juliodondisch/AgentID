@@ -44,18 +44,16 @@ public class ToolRequestRepository {
     }
 
     // Initiate tool execution
-    public String initiateToolExecution(String actionId, String toolName) {
-        String toolRequestId = jdbcTemplate.queryForObject(
-            // select the first pending tool request for the action and tool
-            "SELECT tool_request_id FROM tool_requests WHERE action_id = ? AND tool_name = ? AND tool_status = 'PENDING' LIMIT 1",
-            String.class,
-            actionId, toolName
-        );
-    
-        String sql = "UPDATE tool_requests SET tool_status = 'INITIATED', exec_start_time = ? WHERE action_id = ? AND tool_name = ?";
-        jdbcTemplate.update(sql, Timestamp.valueOf(LocalDateTime.now()), actionId, toolName);
-    
-        return toolRequestId;
+    public String initiateToolExecution(String toolRequestId) {
+        
+        if (toolRequestId != null) {
+            String sql = "UPDATE tool_requests SET tool_status = 'INITIATED', exec_start_time = ? WHERE tool_request_id = ?";
+            jdbcTemplate.update(sql, Timestamp.valueOf(LocalDateTime.now()), toolRequestId);
+            return toolRequestId;
+        }
+        else {
+            return "Null";
+        }
     }
 
     // Complete tool execution

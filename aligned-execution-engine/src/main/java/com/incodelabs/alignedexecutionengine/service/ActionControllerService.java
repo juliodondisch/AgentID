@@ -162,7 +162,8 @@ public class ActionControllerService {
             //Julio
             for (ActionPlan action : actionPlan.getActions()) {
                 // log all tools with pending tool status. no id yet
-                toolRequestService.createToolRequest(actionID, action.getTool(), action.getParameters().toString());
+                String toolRequestId = toolRequestService.createToolRequest(actionID, action.getTool(), action.getParameters().toString());
+                action.setToolRequestId(toolRequestId);
             }
             
             // Validate action plan with policy
@@ -207,7 +208,7 @@ public class ActionControllerService {
                 //Julio
                 policyCheckService.completePolicyCheck(policyCheckId, "completed", "idv", details);
                 String toolRequestId = toolRequestService.createToolRequest(actionID, "idv", null);
-                toolRequestService.initiateToolExecution(actionID, "idv");
+                toolRequestService.initiateToolExecution(toolRequestId);
 
                 if (currentVerificationToken != null) {
                     tokenValidation = verificationService.validateToken(currentVerificationToken);
@@ -238,14 +239,20 @@ public class ActionControllerService {
                 
                 // Create HIL feedback response using the previous action plan
                 CheckOutputIn hilRequestText = generateHilFeedbackResponse(prompt, actionPlan, feedback);
-                 
+
+                // Set status of all current tools in feedback to not completed because they were planned but wont be executed
+                for (ActionPlan action : hilRequestText.getActions()) {
+                    toolRequestService.completeToolExecution(action.getToolRequestId(), "not_completed", "Not completed because HIL feedback was requested instead");
+                }
+                
                 // Set the HIL response in feedback and mark as completed
-                feedback.setActionPlan(hilRequestText); // Use actionPlan field instead of hilFeedbackResponse
+                feedback.setActionPlan(hilRequestText);
                 feedback.setCompleted(true);
 
                 // Create and initiate hil tool request
-                toolRequestService.createToolRequest(actionID, "hil_feedback", hilRequestText.getLlmOutput());
-                toolRequestService.initiateToolExecution(actionID, "hil_feedback");
+                String toolRequestId = toolRequestService.createToolRequest(actionID, "hil_feedback", hilRequestText.getLlmOutput());
+                hilRequestText.getActions().get(0).setToolRequestId(toolRequestId);
+                toolRequestService.initiateToolExecution(toolRequestId);
                  
                 querySessionService.pauseQuerySession(sessionID);
                  
@@ -259,7 +266,7 @@ public class ActionControllerService {
                     for (ActionPlan action : actionPlan.getActions()) {
                         //Julio
                         // start tool exec should find correct tool request and assign id to it
-                        String toolRequestId = toolRequestService.initiateToolExecution(actionID, action.getTool());
+                        String toolRequestId = toolRequestService.initiateToolExecution(action.getToolRequestId());
 
                         String toolResult = executeToolAction(action, feedback);
                         //Julio
