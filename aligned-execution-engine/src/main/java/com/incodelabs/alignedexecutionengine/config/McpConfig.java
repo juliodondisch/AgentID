@@ -7,9 +7,14 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.annotation.Bean;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,10 +34,11 @@ public class McpConfig {
         return MethodToolCallbackProvider.builder().toolObjects(mcp).build();
     }
     
+    // Julio - The mcp chat client now only uses MCP tools that are not internal
     @Bean("mcpChatClient")
-    public ChatClient mcpChatClient(ChatClient.Builder builder, @Autowired(required = false) List<ToolCallbackProvider> allToolProviders) {
+    public ChatClient mcpChatClient(ChatClient.Builder builder, @Qualifier("localMcpTools") ToolCallbackProvider localMcpTools) {
         
-        List<ToolCallbackProvider> toolProviders = allToolProviders != null ? allToolProviders : new ArrayList<>();
+        List<ToolCallbackProvider> toolProviders = List.of(localMcpTools);
         
         log.info("Found {} ToolCallbackProvider beans", toolProviders.size());
         for (int i = 0; i < toolProviders.size(); i++) {
@@ -41,16 +47,31 @@ public class McpConfig {
             log.info("Provider {}: {} with {} tools", i, provider.getClass().getSimpleName(), 
                     toolCallbacks.length);
             for (var tool : toolCallbacks) {
-                log.info("  - Tool: {}", tool.getClass().getSimpleName());
+                log.info("  - MCP Chat Client Tool: {}", tool.toString());
             }
         }
+
+        
         
         var chatClientBuilder = builder
                 .defaultSystem("You are a helpful assistant that can execute banking operations, check balances, and handle various requests. Use available tools when appropriate.");
         
-        // Add all available tool providers (both local MCP server tools and external MCP client tools)
+        // Add all available tool providers (only local tools)
         chatClientBuilder.defaultToolCallbacks(toolProviders.toArray(new ToolCallbackProvider[0]));
         
         return chatClientBuilder.build();
+    }
+
+    @Bean
+    public ApplicationListener<ContextRefreshedEvent> logToolCallbackProviders(ApplicationContext ctx) {
+        return event -> {
+            String[] beanNames = ctx.getBeanNamesForType(org.springframework.ai.tool.ToolCallbackProvider.class);
+            System.out.println("=== ToolCallbackProvider beans ===");
+            for (String name : beanNames) {
+                Object bean = ctx.getBean(name);
+                System.out.println("Bean: " + name + " -> " + bean.getClass().getName());
+            }
+            System.out.println("==================================");
+        };
     }
 }

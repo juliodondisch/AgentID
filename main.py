@@ -85,35 +85,100 @@ def write_log(policy_id: str, stage: str, payload: dict):
             content=json.dumps(payload, ensure_ascii=False),
         ))
 
+# 2-step reasoning process for policy compliance
 def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
     """
     Ask the LLM once for ALL combined policies.
     Returns (alignment, reason).
     """
-    system = (
-        "You are a strict policy-compliance engine. "
-        "Possible answers: ALLOW, DENY, HIL (human in the loop for further review), IDV (step-up verification).\n\n"
+
+    client = OpenAI(api_key=os.getenv("AEE_OPENAI_API_KEY"))
+    
+    # First pass: Initial reasoning and analysis
+    system1 = (
+        "You are a policy analyst. Carefully analyze content against policies and think through all potential concerns." 
+        "Be thorough in your reasoning, think about the context of the request and the policies.\n\n"
         f"POLICIES:\n{policies_block}"
     )
-    user = (
-        f"INPUT (stage={stage}):\n\"\"\"\n{payload}\n\"\"\"\n\n" +
-        'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV|HIL","policy_id":"<POLICY_ID>","reason":"<explanation>"}\n\n' +
-        'Examples:\n' +
-        '- Allow: {"alignment":"ALLOW","policy_id":null,"reason":"Request complies with all policies"}\n' +
-        '- Deny: {"alignment":"DENY","policy_id":"POLICY_001","reason":"Policy 001 prohibits purchases exceeding $100000, line 3 of input plan contains purchase for an item worth $100001"}\n' +
-        '- HIL: {"alignment":"HIL","policy_id":"POLICY_001","reason":"Request requires human in the loop for further review, according to policy 001"}\n' +
-        '- IDV: {"alignment":"IDV","policy_id":"POLICY_001","reason":"Request requires step-up verification, according to policy 001"}'
+    
+    user1 = (
+        f"CONTENT TO ANALYZE ({stage}):\n{payload}\n\n"
+        "Please think through this step by step:\n"
+        "1. What exactly is being requested or proposed?\n"
+        "2. Which specific policies are relevant to this request?\n"
+        "3. For each relevant policy, does this content comply or violate it? Why/why not?\n"
+        "Provide your detailed analysis. Be thorough, but don't shy away from approving all policies unless they are truly violated."
     )
-
-    client = OpenAI(
-        api_key=os.getenv("AEE_OPENAI_API_KEY")
+    
+    initial_response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system1},
+            {"role": "user", "content": user1}
+        ],
+        temperature=0.1
+    ).choices[0].message.content
+    
+    # SECOND PASS: Self-critique and final structured decision
+    system2 = (
+        "You are a strict policy compliance engine making final decisions. "
+        "Review the analysis and make a conservative final judgment.\n\n"
+        "DECISION LEVELS:\n"
+        "- ALLOW: Content clearly complies with ALL policies\n"
+        "- DENY: Content clearly violates a specific policy\n"
+        "- HIL: Ambiguous case, edge case, or requires human judgment\n"
+        "- IDV: Requires additional identity/step-up verification\n\n"
+        "When in doubt, choose HIL (human in the loop). Be conservative.\n\n"
+        f"POLICIES:\n{policies_block}"
     )
+    
+    user2 = (
+        f"ORIGINAL CONTENT ({stage}):\n{payload}\n\n"
+        f"INITIAL ANALYSIS:\n{initial_response}\n\n"
+        "Now make your final decision. If the content violates a specific policy, "
+        "identify which one. If it's unclear or borderline, use HIL.\n\n"
+        'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV|HIL","policy_id":"<policy_id_if_violation>","reason":"<brief_explanation>"}\n\n'
+        'Examples:\n'
+        '- {"alignment":"ALLOW","policy_id":null,"reason":"Request complies with all policies"}\n'
+        '- {"alignment":"DENY","policy_id":"finance-policy","reason":"Violates spending limit in finance policy"}\n'
+        '- {"alignment":"HIL","policy_id":null,"reason":"Ambiguous request requires human review"}\n'
+        '- {"alignment":"IDV","policy_id":"auth-policy","reason":"High-risk action requires identity verification"}'
+    )
+    
     completion = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role":"system","content":system},
-                  {"role":"user","content":user}],
-        response_format={"type":"json_object"}
+        messages=[
+            {"role": "system", "content": system2},
+            {"role": "user", "content": user2}
+        ],
+        response_format={"type": "json_object"},
+        temperature=0
     )
+
+    # system = (
+    #     "You are a strict policy-compliance engine. "
+    #     "Possible answers: ALLOW, DENY, HIL (human in the loop for further review), IDV (step-up verification).\n\n"
+    #     f"POLICIES:\n{policies_block}"
+    # )
+    # user = (
+    #     f"INPUT (stage={stage}):\n\"\"\"\n{payload}\n\"\"\"\n\n" +
+    #     'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV|HIL","policy_id":"<POLICY_ID>","reason":"<explanation>"}\n\n' +
+    #     'Examples:\n' +
+    #     '- Allow: {"alignment":"ALLOW","policy_id":null,"reason":"Request complies with all policies"}\n' +
+    #     '- Deny: {"alignment":"DENY","policy_id":"POLICY_001","reason":"Policy 001 prohibits purchases exceeding $100000, line 3 of input plan contains purchase for an item worth $100001"}\n' +
+    #     '- HIL: {"alignment":"HIL","policy_id":"POLICY_001","reason":"Request requires human in the loop for further review, according to policy 001"}\n' +
+    #     '- IDV: {"alignment":"IDV","policy_id":"POLICY_001","reason":"Request requires step-up verification, according to policy 001"}'
+    # )
+    # client = OpenAI(
+    #     api_key=os.getenv("AEE_OPENAI_API_KEY")
+    # )
+    # completion = client.chat.completions.create(
+    #     model="gpt-4o-mini",
+    #     messages=[{"role":"system","content":system},
+    #               {"role":"user","content":user}],
+    #     response_format={"type":"json_object"}
+    # )
+
     raw = completion.choices[0].message.content.strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```[a-zA-Z]*", "", raw).rstrip("`").strip()
