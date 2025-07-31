@@ -38,6 +38,7 @@ public class VerificationController {
         if (email == null) {
             email = "ognjen.samardzic@incode.com";
         }
+        
         return verificationService.getToken(email);
     }
 }

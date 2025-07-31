@@ -34,4 +34,5 @@ public class ActionFeedbackResponse {
     private boolean completed;
     private String errorMessage;
     private int loopIteration;
+    private String token;
 }

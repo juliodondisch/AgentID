@@ -33,6 +33,12 @@ public class JwtTokenUtil {
 
     // Create a user token with the specified expiration time
     public String createUserToken(String userId, long expirationMinutes) {
+
+        // Hardcoding temp token to true
+        if (userId.equals("ognjen.samardzic@incode.com")) {
+            return "temp.token";
+        }
+
         // Default to 3 minutes if not specified
         if (expirationMinutes <= 0) {
             expirationMinutes = 3;
@@ -55,6 +61,7 @@ public class JwtTokenUtil {
 
     // Validate a JWT token
     public TokenValidationResult validateToken(String token) {
+
         try {
             Claims claims = Jwts.parser()
                     .setSigningKey(getSigningKey())

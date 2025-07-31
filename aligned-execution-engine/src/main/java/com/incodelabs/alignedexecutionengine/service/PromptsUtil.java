@@ -35,7 +35,7 @@ public class PromptsUtil {
                 - Choose the most appropriate tools for each step
                 - Consider tool capabilities and limitations
                 - Ensure tools are used in logical order (e.g., gather information before processing it)
-                - You may never use internal tools like process-request, resume-processing, or any other internal tools.
+                - You may never use internal tools like process-request, resume-processing, or any other internal tools.  The functions.spring_ai_mcp_client_acme_bank_store_token, and multi_tool_use.parallel tools are also off limits, it should not exist and never be called.
                 
                 ### Step 3: Action Sequencing
                 - Order actions logically with proper dependencies
@@ -92,11 +92,11 @@ public class PromptsUtil {
                 
                 1. **Analyze** the user's request to understand the goal and requirements
                 2. **COMPARE** Compare completed steps with remain steps
-                3. **Make new plan** Make new plan if there is any feedback message for previous plan.
-                3.5. **Purchases** Execute purchases if the user requests them, you may do so by using the acme bank tools
-                4. **Optimize** tool usage for efficiency and effectiveness
+                3. **Make new plan** Make new plan if there is any feedback message for previous plan. Consider the previously executed tools and the results of those tools to make a new plan, if the previous tools didn't provide the information we needed then try to pick new tools.
+                3.5. **Purchases** Execute purchases if the user requests them, you may do so by using the acme bank tools. The user approving items meant for purchase is equivalent to requesting purchases.
+                4. **Optimize** Tool usage for efficiency and effectiveness
                 5. **Complete the original user request in full** Make sure to complete the original user request in full. You must complete everything the user requested that is possible using the tools available to you. When asked to purchase an item, you must transfer from acme bank mcp with the purchase amount given the account has enough funds. Do not continue if you cannot complete the original user request in full, simply notify the user the process is not complete. When asked to buy something you must actually try to do the transfer.
-                6. **Never use internal tools** You may never use internal tools like process-request and get-results, even if they show up as available tools.
+                6. **Never use internal tools** You may never use internal tools like process-request and get-results, even if they show up as available tools. The functions.spring_ai_mcp_client_acme_bank_store_token, and multi_tool_use.parallel tools are also off limits, it should not exist and never be called.
 
                 ## Input Processing
                 
@@ -104,8 +104,9 @@ public class PromptsUtil {
                 - **User Request**: The task or goal the user wants to accomplish
                 - **Completed Steps**: A list of steps that have been completed
                 - **Available Tools**: A list of tools you can use, each with their capabilities and parameters. 
-                - **Unavailable Tools**: You may never use process-request or get-results tools even if they show up as available tools. 
+                - **Unavailable Tools**: You may never use process-request or get-results tools even if they show up as available tools. The functions.spring_ai_mcp_client_acme_bank_store_token multi_tool_use.parallel tools are also off limits, it should not exist and never be called.
                 
+
                 ## Response Format
                 - Actions array should contain only steps that are not completed yet.
                 - You may never use internal tools like process-request and get-results, even if they show up as available tools. Better to leave the tools empty even if the plan is not complete, and notify the user that the plan is not complete.
@@ -155,15 +156,12 @@ public class PromptsUtil {
                 
                 ### Reasons for Human Intervention
                 - **Information Request**: The user may request information about what the agent is doing at any time. in this case you should provide the user with the information they requested, and not necesarilly ask questions unless needed.
-                - **Multiple Valid Options**: When there are several reasonable approaches and user preference matters
-                - **Ambiguous Requirements**: When the original request lacks specificity
+                - **Multiple Valid Options**: When there are several reasonable approaches and user preference matters. It's better to show the user the options and ask them to make decisions.
                 - **High-Impact Decisions**: Actions with significant consequences or costs
-                - **Personal Preferences**: Choices involving style, tone, or subjective elements
                 - **Safety Concerns**: Actions that could have unintended consequences
                 - **External Dependencies**: When actions require information only the human can provide
                 
                 ### Optional Human Confirmation
-                - **Complex Multi-Step Plans**: Give overview of the action planbefore proceeding
                 - **Tool Usage**: Explain what tools will be used and why
                 - **Data Access**: Inform about what information will be accessed
                 - **Complexity and Failure Expectations**: Set realistic expectations for completion
@@ -201,6 +199,14 @@ public class PromptsUtil {
                    }
                  ]
                 }
+                """;
+    }
+    public String contextSummaryPrompt() {
+        return """
+                # Context Summary Prompt
+                
+                You are a context summary agent that summarizes the context of a given session. Make sure to include accurate information about what has happened in the session so far, so that a future action planner can understand and make a new plan while avoiding repeating the same mistakes.
+                
                 """;
     }
 }

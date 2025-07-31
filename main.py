@@ -91,7 +91,7 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
     Ask the LLM once for ALL combined policies.
     Returns (alignment, reason).
     """
-
+    print(payload)
     client = OpenAI(api_key=os.getenv("AEE_OPENAI_API_KEY"))
     
     # First pass: Initial reasoning and analysis
@@ -104,10 +104,12 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
     user1 = (
         f"CONTENT TO ANALYZE ({stage}):\n{payload}\n\n"
         "Please think through this step by step:\n"
-        "1. What exactly is being requested or proposed?\n"
+        "1. What exactly is being requested or proposed? What tool requests are being made?\n"
         "2. Which specific policies are relevant to this request?\n"
-        "3. For each relevant policy, does this content comply or violate it? Why/why not?\n"
-        "Provide your detailed analysis. Be thorough, but don't shy away from approving all policies unless they are truly violated."
+        "3. For each relevant policy, does a staged tool execution comply or violate it? Why/why not?\n"
+        "4. If an HIL policy is violated, but the user has already submitted information that confirms the policy, mention this and suggest ALLOW and NOT HIL, since we don't want to repeat HIL requests for the same thing.\n"
+        "5. You cannot choose 2 policies at the same time, you must choose one.\n"
+        "Provide your detailed analysis. Allow policies unless they are truly violated."
     )
     
     initial_response = client.chat.completions.create(
@@ -118,17 +120,20 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
         ],
         temperature=0.1
     ).choices[0].message.content
+
+    print(initial_response)
     
     # SECOND PASS: Self-critique and final structured decision
     system2 = (
         "You are a strict policy compliance engine making final decisions. "
-        "Review the analysis and make a conservative final judgment.\n\n"
+        "Review the analysis and make a conservative final judgment. "
+        "If no policy is violated, use ALLOW. You are mainly judging if tool executions should be allowed. If there are no tool executions then always allow or hil if an hil policy is violated. Do not stop the action plan unless one of the tool executions violates a policy, even if the action plan may violate a policy in the future. Do not get ahead of yourself this will cause coordination issues.\n\n"
         "DECISION LEVELS:\n"
-        "- ALLOW: Content clearly complies with ALL policies\n"
+        "- ALLOW: Content complies with all policies\n"
         "- DENY: Content clearly violates a specific policy\n"
-        "- HIL: Ambiguous case, edge case, or requires human judgment\n"
+        "- HIL: Requires human judgment as specified by policy\n"
         "- IDV: Requires additional identity/step-up verification\n\n"
-        "When in doubt, choose HIL (human in the loop). Be conservative.\n\n"
+        "If no policy is violated, use ALLOW.\n\n"
         f"POLICIES:\n{policies_block}"
     )
     
@@ -136,7 +141,7 @@ def judge(policies_block: str, stage: str, payload) -> tuple[str, str]:
         f"ORIGINAL CONTENT ({stage}):\n{payload}\n\n"
         f"INITIAL ANALYSIS:\n{initial_response}\n\n"
         "Now make your final decision. If the content violates a specific policy, "
-        "identify which one. If it's unclear or borderline, use HIL.\n\n"
+        "identify which one. If no policy is violated, use ALLOW. Do not repeat HIL requests for the same thing, if an HIL policy is violated but the user ALREADY submitted information that confirms the policy, use ALLOW and DO NOT USE HIL.\n\n"
         'Respond ONLY as JSON: {"alignment":"ALLOW|DENY|IDV|HIL","policy_id":"<policy_id_if_violation>","reason":"<brief_explanation>"}\n\n'
         'Examples:\n'
         '- {"alignment":"ALLOW","policy_id":null,"reason":"Request complies with all policies"}\n'

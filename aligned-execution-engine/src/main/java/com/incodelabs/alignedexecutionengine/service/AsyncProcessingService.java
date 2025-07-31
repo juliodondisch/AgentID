@@ -40,6 +40,7 @@ public class AsyncProcessingService {
         private ProcessingStatus status;
         private ActionFeedbackResponse result;
         private String errorMessage;
+        private String token;
         
         public ProcessingSession(String sessionId, String prompt) {
             this.sessionId = sessionId;
@@ -58,6 +59,8 @@ public class AsyncProcessingService {
         public void setResult(ActionFeedbackResponse result) { this.result = result; }
         public String getErrorMessage() { return errorMessage; }
         public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+        public String getToken() { return token; }
+        public void setToken(String token) { this.token = token; }
     }
     
     public enum ProcessingStatus {

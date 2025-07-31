@@ -26,17 +26,13 @@ public class IdentityVerificationApi {
     public record TokenValidationResponse(boolean valid, String error, boolean needsVerification, String message, String userId) {}
 
     public TokenValidationResponse validateToken(String token) {
+
         logger.info("Validating token: {}", token);
         try {
-            Map<String, String> requestBody = new HashMap<>();
-            requestBody.put("token", token);
-
-            HttpEntity<Map<String, String>> entity = new HttpEntity<>(requestBody);
-
-            ResponseEntity<TokenValidationResponse> response = restTemplate.postForEntity(
-                    identityVerificationMcpUrl + "/validate-token",
-                    entity,
-                    TokenValidationResponse.class
+            // Julio - Changed from post to get to match the idv-mcp endpoint
+            ResponseEntity<TokenValidationResponse> response = restTemplate.getForEntity(
+                identityVerificationMcpUrl + "/validate-token?token=" + token,
+                TokenValidationResponse.class
             );
 
             logger.info("Token validation response: {}", response.getBody());

@@ -66,12 +66,13 @@ public class McpConfig {
     public ApplicationListener<ContextRefreshedEvent> logToolCallbackProviders(ApplicationContext ctx) {
         return event -> {
             String[] beanNames = ctx.getBeanNamesForType(org.springframework.ai.tool.ToolCallbackProvider.class);
-            System.out.println("=== ToolCallbackProvider beans ===");
+            // Use log.info instead of System.out.println to avoid polluting stdout
+            log.info("=== ToolCallbackProvider beans ===");
             for (String name : beanNames) {
                 Object bean = ctx.getBean(name);
-                System.out.println("Bean: " + name + " -> " + bean.getClass().getName());
+                log.info("Bean: {} -> {}", name, bean.getClass().getName());
             }
-            System.out.println("==================================");
+            log.info("==================================");
         };
     }
 }

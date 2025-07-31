@@ -57,6 +57,21 @@ public class VerificationService {
             );
         }
 
+        // REMOVE - temp verification trace id for testing
+        if (verificationTraceId.equals("temp-verification-trace-id")) {
+            var email = "ognjen.samardzic@incode.com";
+            var token = "temp-token";
+            tokenMap.put(email, token);
+            logger.info("Created verification token and cached into tokenMap for {}", email);
+            return new CheckVerificationStatusResponse(
+                    "Verification successful! Your authentication token is: temp-token",
+                    true,
+                    "SUCCESS",
+                    "temp-token",
+                    "ognjen.samardzic@incode.com"
+            );
+        }
+
         var verificationInfo = incodeIdApiClient.getPendingVerifications().get(verificationTraceId);
         if (verificationInfo == null) {
             return new CheckVerificationStatusResponse(
@@ -119,6 +134,17 @@ public class VerificationService {
 
     public TokenValidationResponse validateToken(String token) {
         logger.info("Validating token: {}", token);
+
+        // REMOVE - temp token for testing
+        if (token.equals("temp-token")) {
+            return new TokenValidationResponse(
+                    "Token is valid.",
+                    true,
+                    true,
+                    "ognjen.samardzic@incode.com"
+            );
+        }
+        
         try {
             var validation = jwtTokenUtil.validateToken(token);
             logger.info("JWT token validated: {}", validation);
@@ -152,6 +178,7 @@ public class VerificationService {
 
     public GetTokenResponse getToken(String email) {
         logger.info("Get user token: {}", email);
+
         var token = tokenMap.get(email);
         if (token != null) {
             return new GetTokenResponse(

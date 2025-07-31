@@ -16,7 +16,7 @@ public class IncodeVerificationApiClient {
     
     private final RestTemplate restTemplate;
     
-    @Value("${incode.verification.api.base-url:https://incode-idv-mcp.ngrok.app}")
+    @Value("${incode.verification.api.base-url}")
     private String baseUrl;
     
     private HttpHeaders createHeaders() {
@@ -44,6 +44,7 @@ public class IncodeVerificationApiClient {
                 url, HttpMethod.GET, request, StartVerificationResponse.class);
             
             StartVerificationResponse result = response.getBody();
+            log.info("Verification response: {}", result);
             log.info("Verification started successfully with trace ID: {}", 
                 result != null ? result.getVerificationTraceId() : "null");
             return result;
@@ -91,6 +92,7 @@ public class IncodeVerificationApiClient {
     public TokenResponse getToken(String userEmail) {
         try {
             String url = baseUrl + "/get-token";
+            log.info("Getting token for user: {} from URL: {}", userEmail, url);
             if (userEmail != null && !userEmail.isEmpty()) {
                 url += "?email=" + userEmail;
             }
@@ -103,6 +105,7 @@ public class IncodeVerificationApiClient {
             
             TokenResponse result = response.getBody();
             log.info("Token retrieved successfully for user: {}", userEmail);
+            log.info("Token Response: {}", result.getToken());
             return result;
             
         } catch (HttpClientErrorException e) {

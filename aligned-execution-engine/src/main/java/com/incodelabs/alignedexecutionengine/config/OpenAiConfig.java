@@ -18,16 +18,37 @@ import java.util.List;
 @Slf4j
 public class OpenAiConfig {
     @Bean("openAiChatClient") // should be renamed to action planner
-    // Julio - mcpToolCallbacks is the tool callback bean for the MCP client tools
-    public ChatClient openAiChatClient(ChatClient.Builder builder, @Qualifier("mcpToolCallbacks") List<ToolCallbackProvider> externalToolProviders) {
-        List<ToolCallbackProvider> toolProviders = externalToolProviders;
-        for (ToolCallbackProvider provider : toolProviders) {
+    public ChatClient openAiChatClient(ChatClient.Builder builder, @Qualifier("mcpToolCallbacks") ToolCallbackProvider externalToolProvider) {
+        // Only use external tools for the action planner
+        List<ToolCallbackProvider> toolProviders = List.of(externalToolProvider);
+        
+        log.info("Action Planner - Found {} ToolCallbackProvider beans", toolProviders.size());
+        for (int i = 0; i < toolProviders.size(); i++) {
+            ToolCallbackProvider provider = toolProviders.get(i);
             var toolCallbacks = provider.getToolCallbacks();
-            log.info("Provider: {} with {} tools", provider.getClass().getSimpleName(), toolCallbacks.length);
+            log.info("Provider {}: {} with {} tools", i, provider.getClass().getSimpleName(), toolCallbacks.length);
             for (var tool : toolCallbacks) {
-                log.info("  - OpenAI Chat Client Tool: {}", tool.toString());
+                try {
+                    // Try multiple approaches to get tool information
+                    log.info("  - Tool class: {}", tool.getClass().getName());
+                    
+                    // Try to get tool definition if available
+                    var getToolDefinitionMethod = tool.getClass().getMethod("getToolDefinition");
+                    var toolDefinition = getToolDefinitionMethod.invoke(tool);
+                    log.info("    Tool definition: {}", toolDefinition);
+                    
+                    // Try to get name from tool definition
+                    if (toolDefinition != null) {
+                        var getNameMethod = toolDefinition.getClass().getMethod("getName");
+                        String toolName = (String) getNameMethod.invoke(toolDefinition);
+                        log.info("    Tool name: {}", toolName);
+                    }
+                } catch (Exception e) {
+                    log.info("  - Action Planner Tool: {} (could not get details: {})", tool.toString(), e.getMessage());
+                }
             }
         }
+        
         return builder
                 .defaultSystem("You are helpful assistant that helps users with their tasks.")
                 .defaultToolCallbacks(toolProviders.toArray(new ToolCallbackProvider[0]))

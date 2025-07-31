@@ -4,6 +4,7 @@ import com.incodelabs.alignedexecutionengine.integration.PolicyApiClient;
 import com.incodelabs.alignedexecutionengine.integration.dto.*;
 import com.incodelabs.alignedexecutionengine.integration.email.EmailClientApi;
 import com.incodelabs.alignedexecutionengine.integration.email.dto.EmailRequest;
+import com.incodelabs.alignedexecutionengine.integration.verification.IncodeVerificationApiClient;
 import com.incodelabs.alignedexecutionengine.integration.verification.dto.TokenResponse;
 import com.incodelabs.alignedexecutionengine.integration.verification.dto.TokenValidationResponse;
 import com.incodelabs.alignedexecutionengine.integration.verification.dto.VerificationStatusResponse;
@@ -37,24 +38,45 @@ public class ActionControllerService {
     private final PolicyCheckService policyCheckService;
     private final ToolRequestService toolRequestService;
     private final FeedbackService feedbackService;
+    private final ContextService contextService;
     
     private static final int MAX_FEEDBACK_LOOPS = 50;
     private String currentVerificationToken; // Store token for use in tool parameters
 
     // Julio - added sessionID parameter so we can log with logging service
     public ActionFeedbackResponse testControllerAgent(String prompt, String sessionID, Boolean resume) {
+
         String processedPrompt = prompt;
         ActionFeedbackResponse feedback = ActionFeedbackResponse.builder().build();
         feedback.setPrompt(prompt);
+        currentVerificationToken = verificationService.getToken(getCurrentUserEmail()).getToken();
+        log.info("Initial verification token: {}", currentVerificationToken);
         // Julio
         if (!resume) {
-        querySessionService.startQuerySession(prompt, sessionID);
+            querySessionService.startQuerySession(prompt, sessionID);
+        } 
+        else {
+            // Handle resume case and check if we need to get token from IDV service
+            if (currentVerificationToken == null || currentVerificationToken.isEmpty()) {
+                log.info("Resuming IDV session, checking for verification token");
+                
+                // Try to get token from IDV service
+                String userEmail = getCurrentUserEmail();
+                var tokenResponse = verificationService.getToken(userEmail);
+                
+                if (tokenResponse.isSuccess() && tokenResponse.getToken() != null) {
+                    log.info("Retrieved verification token from IDV-MCP");
+                    currentVerificationToken = tokenResponse.getToken();
+                } else {
+                    log.warn("No verification token found in IDV-MCP, user may not have completed verification");
+                }
+            }
         }
 
         try {
             if (!resume) {
                 // Step 1: Validate initial prompt
-                Optional<DecisionOut> promptValidation = validateClientPrompt(prompt);
+                Optional<DecisionOut> promptValidation = validateClientPrompt(prompt + "Staged Tool Executions: None");
                 
                 if (promptValidation.isEmpty()) {
                     log.warn("Prompt validation failed: {}", prompt);
@@ -81,8 +103,8 @@ public class ActionControllerService {
                     idvTriggered = true;
                     feedback.getExecutionSteps().add(ActionPlan.builder().tool("idv").build());
                     
+                    // Complete the IDV process, works similar to HIL feedback request if we don't have a token
                     try {
-                        // Complete IDV process
                         String verificationToken = completeIdvProcess(feedback);
                         
                         if (verificationToken != null) {
@@ -102,8 +124,6 @@ public class ActionControllerService {
                 if (!idvTriggered) {
                     querySessionService.updateSessionPolicy(sessionID, "allow", "All policies allowed");
                 }
-
-                // Step 2: Start feedback loop if prompt is allowed.
             }
 
             // Julio - Changed just to log end of query session
@@ -166,14 +186,20 @@ public class ActionControllerService {
                 action.setToolRequestId(toolRequestId);
             }
             
-            // Validate action plan with policy
             // Julio
             String policyCheckId = policyCheckService.createPolicyCheck(actionID);
+
+            String policyPromptWithContext = contextService.buildPolicyPromptWithContext(
+                sessionID, 
+                actionPlan.getLlmOutput(), 
+                actionPlan.getActions(),
+                actionID
+            );
             
             CheckOutputRequest policyRequest = CheckOutputRequest.builder()
-                    .llmOutput(actionPlan.getLlmOutput())
-                    .actions(actionPlan.getActions() != null ? actionPlan.getActions() : Collections.emptyList())
-                    .build();
+                .llmOutput(policyPromptWithContext)  // Julio - Using context + prompt instead
+                .actions(actionPlan.getActions() != null ? actionPlan.getActions() : Collections.emptyList())
+                .build();
             
             feedback.setCheckOutputRequest(policyRequest);
             
@@ -199,38 +225,66 @@ public class ActionControllerService {
             }
 
 
-            TokenValidationResponse tokenValidation = new TokenValidationResponse();
             if (PerPolicy.AlignmentType.idv.equals(outputDecision.getAlignment())) {
-                tokenValidation.setValid(false);
-                tokenValidation.setMessage("null token");
-                tokenValidation.setSuccess(false);
-
-                //Julio
+                // Julio
                 policyCheckService.completePolicyCheck(policyCheckId, "completed", "idv", details);
                 String toolRequestId = toolRequestService.createToolRequest(actionID, "idv", null);
                 toolRequestService.initiateToolExecution(toolRequestId);
 
-                if (currentVerificationToken != null) {
+                // Get user email (in real implementation, get from user context)
+                String userEmail = getCurrentUserEmail();
+                
+                currentVerificationToken = verificationService.getToken(userEmail).getToken();
+
+                // Check if we already have a token
+                if (currentVerificationToken != null && !currentVerificationToken.isEmpty()) {
+                    // We have token, validate and if not then clear and request new verification
+                    log.info("Validating existing verification token");
+                    TokenValidationResponse tokenValidation = new TokenValidationResponse();
                     tokenValidation = verificationService.validateToken(currentVerificationToken);
+                    
+                    if (tokenValidation.isValid()) {
+                        log.info("Existing token is valid, proceeding with execution");
+                        toolRequestService.completeToolExecution(toolRequestId, "success", "Valid token found");
+                        outputDecision.setAlignment(PerPolicy.AlignmentType.allow);
+                    } else {
+                        log.info("Existing token is invalid, clearing and requesting new verification");
+                        currentVerificationToken = null;
+                    }
                 }
-                if (!tokenValidation.isValid()) {
-                    currentVerificationToken =  completeIdvProcess(feedback);
-                }
+                // Get token from IDV-MCP, if exists
 
-                // Julio - Remove this, just for testing
-                currentVerificationToken = "Temporary token";
+                currentVerificationToken = verificationService.getToken(userEmail).getToken();
 
+                // If the following statement is true, we need to request verification
                 if (currentVerificationToken == null || currentVerificationToken.isEmpty()) {
-                    feedback.setErrorMessage("IDV process failed, no token available");
-                    //Julio
-                    toolRequestService.completeToolExecution(toolRequestId, "failed", "Identity verification completed successfully");
+                    log.info("No valid token found, starting verification process");
 
-                    return feedback;
+                    // Start verification process
+                    var startResp = verificationService.startVerification(userEmail);
+                    log.info("Verification start response: {}", startResp);
+                    if (startResp.isSuccess()) {
+                        log.info("Verification started successfully");
+                        String idvMessage = createIdvPremadeMessage(startResp.getVerificationLink(), prompt);
+                        // Set status of all current tools in feedback to not completed
+                        for (ActionPlan action : actionPlan.getActions()) {
+                            toolRequestService.completeToolExecution(toolRequestId, "not_completed", "Not completed because IDV was required");
+                        }
+                        // Must do so that get-results tool can return message
+                        feedback.setFinalResult(idvMessage);
+                        feedback.setCompleted(true);
+                        querySessionService.pauseQuerySession(sessionID);
+                        log.info("Verification message for user: {}", feedback);
+
+                        return feedback;
+                    } else {
+                        log.error("Failed to start verification process");
+                        toolRequestService.completeToolExecution(toolRequestId, "failed", "Failed to start verification");
+                        feedback.setErrorMessage("Failed to start identity verification process");
+                        return feedback;
+                    }
                 }
-                //Julio
-                toolRequestService.completeToolExecution(toolRequestId, "success", "Identity verification completed successfully");
-
-                outputDecision.setAlignment(PerPolicy.AlignmentType.allow);
+                
             }
 
             if (PerPolicy.AlignmentType.hil.equals(outputDecision.getAlignment())) {
@@ -253,7 +307,7 @@ public class ActionControllerService {
                 String toolRequestId = toolRequestService.createToolRequest(actionID, "hil_feedback", hilRequestText.getLlmOutput());
                 hilRequestText.getActions().get(0).setToolRequestId(toolRequestId);
                 toolRequestService.initiateToolExecution(toolRequestId);
-                 
+                
                 querySessionService.pauseQuerySession(sessionID);
                  
                 return feedback;
@@ -279,7 +333,7 @@ public class ActionControllerService {
                         feedback.setExecutionSteps(actionPlan.getActions().stream().filter(a -> !a.getTool().equals(action.getTool())).collect(Collectors.toList()));
                         // Add any new execution steps based on tool results if needed
                     }
-                    addNewExecutionStepsIfNeeded(feedback);
+                    addNewExecutionStepsIfNeeded(feedback, sessionID);
                     //Julio
                 } else {
                     // No actions to execute for this step
@@ -305,7 +359,12 @@ public class ActionControllerService {
         String toolInstruction = formatToolInstruction(action);
         feedback.getToolExecutions().add("Executing: " + toolInstruction);
         
-        String result = mcpClientService.executeTool(toolInstruction);
+        // Julio - We now execute tools with the openai chat client, which holds only external tools
+        String result = openAiChatClient.prompt()
+            .system("Execute ONLY the requested tool with the provided parameters. Return only the direct tool execution result, do not include any other text, this task is case sensitive.")
+            .user(toolInstruction)
+            .call()
+            .content();
         feedback.getToolExecutions().add("Result: " + result);
         
         if (feedback.getFinalResult() == null) {
@@ -326,11 +385,24 @@ public class ActionControllerService {
         if (action.getParameters() != null) {
             allParameters.putAll(action.getParameters());
         }
+        log.info("Parameters: {}", allParameters);
         
-        // Add verification token to parameters if available
-        if (currentVerificationToken != null) {
-            allParameters.put("token", currentVerificationToken);
-            allParameters.put("auth_token", currentVerificationToken);
+        // Julio - Only add verification token if available and required by the tool
+        if (allParameters.containsKey("token")) {
+            if (currentVerificationToken != null) {
+                allParameters.put("token", currentVerificationToken);
+            }
+            else {
+                allParameters.put("token", "temp-token");
+            }
+        }
+        if (allParameters.containsKey("auth_token")) {
+            if (currentVerificationToken != null) {
+                allParameters.put("auth_token", currentVerificationToken);
+            }
+            else {
+                allParameters.put("auth_token", "temp-token");
+            }
         }
         
         if (!allParameters.isEmpty()) {
@@ -342,17 +414,18 @@ public class ActionControllerService {
         return instruction.toString().trim();
     }
     
-    private void addNewExecutionStepsIfNeeded(ActionFeedbackResponse feedback) {
+    private void addNewExecutionStepsIfNeeded(ActionFeedbackResponse feedback, String sessionID) {
         String result = feedback.getToolExecutionResults().entrySet()
                 .stream()
                 .map(entry -> entry.getKey() + "=" + entry.getValue())
                 .collect(Collectors.joining(", "));
         String previousPlannedActions = feedback.getActionPlan().getActions().stream().map(ActionPlan::getTool).collect(Collectors.joining(", "));
-        String previousActionPlanInDetail = feedback.getActionPlan().getLlmOutput();
-        String userPrompt = "Initial user request, must be completed in full before processing ends: {" + feedback.getPrompt() + "}. Previous plan: {" + previousActionPlanInDetail + "}. Planned actions: {" + previousPlannedActions + "}. Result of executed actions: {" + result + "}. Should there be any new actions planned based on this result? If yes, please provide a new plan.";
+        String previousActionPlan = feedback.getActionPlan().getLlmOutput();
+        String userPrompt = "Initial user request, must be completed in full before processing ends: {" + feedback.getPrompt() + "}. Previous plan: {" + previousActionPlan + "}. Planned actions: {" + previousPlannedActions + "}. Result of executed actions: {" + result + "}. Should there be any new actions planned based on this result to complete the user request? If yes, please provide a new plan for the next steps.";
         log.info("Feedback prompt: {}", userPrompt);
+        String systemPrompt = "Context summary: " + contextService.buildContextSummary(sessionID) + "\n\n" + promptsUtil.newPlanPrompt() + "\n\n Current token for tool calls that require it: " + currentVerificationToken;
         CheckOutputIn newPlan = openAiChatClient.prompt()
-                .system(promptsUtil.newPlanPrompt())
+                .system(systemPrompt)
                 .user(userPrompt)
                 .call()
                 .entity(CheckOutputIn.class);
@@ -367,8 +440,9 @@ public class ActionControllerService {
     }
 
     private CheckOutputIn prepareActionPlan(String prompt) {
+        String systemPrompt = promptsUtil.actionPlanSystemPrompt() + "\n\n Current token for tool calls that require it: " + currentVerificationToken;
         return openAiChatClient.prompt()
-                .system(promptsUtil.actionPlanSystemPrompt())
+                .system(systemPrompt)
                 .user(prompt)
                 .call()
                 .entity(CheckOutputIn.class);
@@ -475,5 +549,34 @@ public class ActionControllerService {
             log.error("Error during IDV process for user: {}", userEmail, e);
             throw e;
         }
+    }
+
+    private String createIdvPremadeMessage(String verificationLink, String originalPrompt) {
+        return String.format("""
+            🔐 **Identity Verification Required**
+            
+            Your request requires identity verification before we can proceed:
+            
+            **Next Steps:**
+            1. Click the verification link below to complete your identity verification
+            2. Follow the verification process (ID scan, face verification, etc.)
+            3. Once completed, return here and we'll continue with your request
+            
+            **Verification Link:** %s
+            
+            This verification helps us ensure the security of your account and comply with our policies. The verification process typically takes 2-3 minutes to complete.
+            
+            Once you've completed the verification, please let us know and we'll continue processing your request.
+
+            Note: If you are an MCP client, call resume-processing tool with the session ID and feedback about how idv went to resume processing.
+            """, 
+            originalPrompt, 
+            verificationLink
+        );
+    }
+
+    private String getCurrentUserEmail() {
+        // In real implementation, get from user context/session
+        return "ognjen.samardzic@incode.com";
     }
 }
