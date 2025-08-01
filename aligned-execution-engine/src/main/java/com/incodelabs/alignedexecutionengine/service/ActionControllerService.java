@@ -5,6 +5,7 @@ import com.incodelabs.alignedexecutionengine.integration.dto.*;
 import com.incodelabs.alignedexecutionengine.integration.email.EmailClientApi;
 import com.incodelabs.alignedexecutionengine.integration.email.dto.EmailRequest;
 import com.incodelabs.alignedexecutionengine.integration.verification.IncodeVerificationApiClient;
+import com.incodelabs.alignedexecutionengine.integration.verification.dto.StartVerificationResponse;
 import com.incodelabs.alignedexecutionengine.integration.verification.dto.TokenResponse;
 import com.incodelabs.alignedexecutionengine.integration.verification.dto.TokenValidationResponse;
 import com.incodelabs.alignedexecutionengine.integration.verification.dto.VerificationStatusResponse;
@@ -101,24 +102,24 @@ public class ActionControllerService {
                 if (PerPolicy.AlignmentType.idv.equals(promptDecision.getAlignment())) {
                     querySessionService.updateSessionPolicy(sessionID, "idv", details);
                     idvTriggered = true;
-                    feedback.getExecutionSteps().add(ActionPlan.builder().tool("idv").build());
+                    // feedback.getExecutionSteps().add(ActionPlan.builder().tool("idv").build());
                     
-                    // Complete the IDV process, works similar to HIL feedback request if we don't have a token
-                    try {
-                        String verificationToken = completeIdvProcess(feedback);
+                    // // Complete the IDV process, works similar to HIL feedback request if we don't have a token
+                    // try {
+                    //     String verificationToken = completeIdvProcess(feedback);
                         
-                        if (verificationToken != null) {
-                            this.currentVerificationToken = verificationToken;
-                            processedPrompt = "Identity verification completed successfully with token available. Now we can proceed with " + prompt;
-                        } else {
-                            feedback.setErrorMessage("Identity verification failed");
-                            return feedback;
-                        }
-                    } catch (Exception e) {
-                        log.error("IDV process failed", e);
-                        feedback.setErrorMessage("Identity verification process failed: " + e.getMessage());
-                        return feedback;
-                    }
+                    //     if (verificationToken != null) {
+                    //         this.currentVerificationToken = verificationToken;
+                    //         processedPrompt = "Identity verification completed successfully with token available. Now we can proceed with " + prompt;
+                    //     } else {
+                    //         feedback.setErrorMessage("Identity verification failed");
+                    //         return feedback;
+                    //     }
+                    // } catch (Exception e) {
+                    //     log.error("IDV process failed", e);
+                    //     feedback.setErrorMessage("Identity verification process failed: " + e.getMessage());
+                    //     return feedback;
+                    // }
                 }
 
                 if (!idvTriggered) {
@@ -252,24 +253,26 @@ public class ActionControllerService {
                         currentVerificationToken = null;
                     }
                 }
-                // Get token from IDV-MCP, if exists
+                // // Get token from IDV-MCP, if exists
 
-                currentVerificationToken = verificationService.getToken(userEmail).getToken();
+                // currentVerificationToken = verificationService.getToken(userEmail).getToken();
 
                 // If the following statement is true, we need to request verification
                 if (currentVerificationToken == null || currentVerificationToken.isEmpty()) {
                     log.info("No valid token found, starting verification process");
 
                     // Start verification process
-                    var startResp = verificationService.startVerification(userEmail);
+                    StartVerificationResponse startResp = verificationService.startVerification(userEmail);
                     log.info("Verification start response: {}", startResp);
                     if (startResp.isSuccess()) {
                         log.info("Verification started successfully");
-                        String idvMessage = createIdvPremadeMessage(startResp.getVerificationLink(), prompt);
+                        String idvMessage = createIdvPremadeMessage(startResp.getVerificationLink());
+                        
                         // Set status of all current tools in feedback to not completed
                         for (ActionPlan action : actionPlan.getActions()) {
                             toolRequestService.completeToolExecution(toolRequestId, "not_completed", "Not completed because IDV was required");
                         }
+                        
                         // Must do so that get-results tool can return message
                         feedback.setFinalResult(idvMessage);
                         feedback.setCompleted(true);
@@ -551,7 +554,7 @@ public class ActionControllerService {
         }
     }
 
-    private String createIdvPremadeMessage(String verificationLink, String originalPrompt) {
+    private String createIdvPremadeMessage(String verificationLink) {
         return String.format("""
             🔐 **Identity Verification Required**
             
@@ -569,8 +572,7 @@ public class ActionControllerService {
             Once you've completed the verification, please let us know and we'll continue processing your request.
 
             Note: If you are an MCP client, call resume-processing tool with the session ID and feedback about how idv went to resume processing.
-            """, 
-            originalPrompt, 
+            """,
             verificationLink
         );
     }
